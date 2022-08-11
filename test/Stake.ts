@@ -5,8 +5,6 @@ import {
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-const DAY = 60 * 60 * 24;
-
 const ether = (number: string) => {
   return ethers.utils.parseEther(number);
 };
@@ -52,22 +50,91 @@ describe("Stake", function () {
       );
 
       expect(await stakeContract.TOKEN()).to.equal(tokenContract.address);
-      expect(await stakeContract.BP()).to.equal(10000);
     });
   });
 
-  describe("Reward Calculation", function () {
-    it("Stake one month", async function () {
+  describe("Reward Calculation ~ 1m staked value", function () {
+    it("Stake one month ~ rewards 16666", async function () {
       const { stakeContract, owner } = await loadFixture(
         deployOneYearLockFixture
       );
-      await stake(180 * DAY, "1000000");
+      await stake(2629743, "1000000");
 
-      console.log(
-        wei((await stakeContract.calculateRewards(owner.address)).toString())
+      const rewards = await stakeContract.calculateRewards(owner.address);
+      expect(rewards.gt(ether("16666"))).to.equal(true);
+      expect(rewards.lt(ether("16668"))).to.equal(true);
+    });
+
+    it("Stake 6 months ~ rewards 100k", async function () {
+      const { stakeContract, owner } = await loadFixture(
+        deployOneYearLockFixture
       );
+      await stake(15778463, "1000000");
 
-      console.log(await stakeContract.userInfo(owner.address));
+      const rewards = await stakeContract.calculateRewards(owner.address);
+      expect(rewards.gte(ether("99999"))).to.equal(true);
+      expect(rewards.lte(ether("100001"))).to.equal(true);
+    });
+
+    it("Stake 1 year ~ rewards 200k", async function () {
+      const { stakeContract, owner } = await loadFixture(
+        deployOneYearLockFixture
+      );
+      await stake(31556926, "1000000");
+
+      const rewards = await stakeContract.calculateRewards(owner.address);
+      expect(rewards.gte(ether("199999"))).to.equal(true);
+      expect(rewards.lte(ether("200001"))).to.equal(true);
+    });
+  });
+
+  describe("Unstake", function () {
+    it("Stake 1 month and unstake", async function () {
+      const { stakeContract, owner, tokenContract } = await loadFixture(
+        deployOneYearLockFixture
+      );
+      await stake(2629743, "1000000");
+      await stakeContract.calculateRewards(owner.address);
+
+      await tokenContract.transfer(stakeContract.address, ether("5000000"));
+
+      await stakeContract.unstake(ether("1000000"));
+      const balance = await tokenContract.balanceOf(owner.address);
+
+      expect(balance.gte(ether("95016666"))).to.equal(true);
+      expect(balance.lte(ether("95016667"))).to.equal(true);
+    });
+
+    it("Stake 6 month and unstake", async function () {
+      const { stakeContract, owner, tokenContract } = await loadFixture(
+        deployOneYearLockFixture
+      );
+      await stake(15778463, "1000000");
+      await stakeContract.calculateRewards(owner.address);
+
+      await tokenContract.transfer(stakeContract.address, ether("5000000"));
+
+      await stakeContract.unstake(ether("1000000"));
+      const balance = await tokenContract.balanceOf(owner.address);
+
+      expect(balance.gte(ether("95099999"))).to.equal(true);
+      expect(balance.lte(ether("95100001"))).to.equal(true);
+    });
+
+    it("Stake 1 year and unstake", async function () {
+      const { stakeContract, owner, tokenContract } = await loadFixture(
+        deployOneYearLockFixture
+      );
+      await stake(31556926, "1000000");
+      await stakeContract.calculateRewards(owner.address);
+
+      await tokenContract.transfer(stakeContract.address, ether("5000000"));
+
+      await stakeContract.unstake(ether("1000000"));
+      const balance = await tokenContract.balanceOf(owner.address);
+
+      expect(balance.gte(ether("95199999"))).to.equal(true);
+      expect(balance.lte(ether("95200001"))).to.equal(true);
     });
   });
 });

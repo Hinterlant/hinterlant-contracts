@@ -4,6 +4,8 @@ pragma solidity 0.8.16;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+import "hardhat/console.sol";
+
 contract Stake is Ownable {
   // Events
   event NewStake(address from, uint256 newAmount, uint256 totalAmount);
@@ -18,11 +20,8 @@ contract Stake is Ownable {
   // Project's token
   IERC20 public immutable TOKEN;
 
-  // Base Point
-  uint256 constant public BP = 10000;
-
-  // Annual Percentage Yield
-  uint256 public APY = 1000;
+  // Reward per token per second
+  uint256 public RPS = 6337752923;
 
   // Total Staked Value
   uint256 public total;
@@ -70,10 +69,9 @@ contract Stake is Ownable {
     if(ref.start == 0) 
       revert CanNotUnstake();
 
-    ref.amount -= uint192(amount);
-
     TOKEN.transfer(msg.sender, calculateRewards(msg.sender) + amount);
 
+    ref.amount -= uint192(amount);
     if(ref.amount == 0) {
       ref.start = 0;
       ref.allTimes = 0;
@@ -128,7 +126,7 @@ contract Stake is Ownable {
 
     uint256 stakeTime = block.timestamp - userStake.start;
 
-    return (((userStake.amount * APY) / BP) * stakeTime) / 365 days;
+    return (stakeTime * userStake.amount * RPS) / 10**18;
   }
 
   function userInfo(address owner) external view returns(Operation memory) {
@@ -136,7 +134,7 @@ contract Stake is Ownable {
   }
 
   // Only Owner Functions
-  function changeAPY(uint256 newAPY) external onlyOwner {
-    APY = newAPY;
+  function changeRPS(uint256 newRPS) external onlyOwner {
+    RPS = newRPS;
   }
 }
