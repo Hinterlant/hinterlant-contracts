@@ -18,7 +18,7 @@ const ALLOCATIONS = [
   ether("1000"),
   ether("2000"),
   ether("3000"),
-  ether("4000"),
+  ether("4000"), // intentionally determined bigger then TOTAL_SALE_VALUE
 ];
 const PERCENTAGES = [4000, 2000, 2000, 2000];
 const TOTAL_SALE_VALUE = ether("5000");
@@ -245,7 +245,7 @@ describe("Launchpad", function () {
         ethers.constants.MaxUint256
       );
       // stake
-      await stakeContract.stake(ether("10000"));
+      await stakeContract.stake(ether("25000"));
 
       // get tier
       await htime.increase(twoMonths);
@@ -267,7 +267,7 @@ describe("Launchpad", function () {
         ethers.constants.MaxUint256
       );
       // stake
-      await stakeContract.stake(ether("10000"));
+      await stakeContract.stake(ether("75000"));
 
       // get tier
       await htime.increase(twoMonths);
@@ -289,7 +289,7 @@ describe("Launchpad", function () {
         ethers.constants.MaxUint256
       );
       // stake
-      await stakeContract.stake(ether("10000"));
+      await stakeContract.stake(ether("150000"));
 
       // get tier
       await htime.increase(twoMonths);
@@ -300,9 +300,68 @@ describe("Launchpad", function () {
         TP.mul(1000)
       );
     });
+
+    it("Try to buy more than max sale value", async function () {
+      const { launchpadContract, stakeContract, tokenContract } =
+        await loadFixture(deployFixture);
+
+      // set TOTAL_SALE_VALUE to tier 4 allocation
+      await launchpadContract.setTotalSaleValue(ALLOCATIONS[3]);
+
+      // approve
+      await tokenContract.approve(
+        stakeContract.address,
+        ethers.constants.MaxUint256
+      );
+      // stake
+      await stakeContract.stake(ether("150000"));
+
+      // get tier
+      await htime.increase(twoMonths);
+
+      // we are sending intentionally 4001 ether to trigger our error
+      await expect(
+        launchpadContract.buy(ether("4001"), { value: ether("4001") })
+      ).to.be.revertedWithCustomError(
+        launchpadContract,
+        "AmountExceedsMaxAmount"
+      );
+    });
   });
 
   describe("Claim Operations", function () {
+    it("Try to claim without buy", async function () {
+      const { launchpadContract } = await loadFixture(deployFixture);
+
+      await expect(launchpadContract.claim()).to.be.revertedWithCustomError(
+        launchpadContract,
+        "NothingToClaim"
+      );
+    });
+
+    it("Try to claim before sale end", async function () {
+      const { launchpadContract, stakeContract, tokenContract } =
+        await loadFixture(deployFixture);
+
+      // approve
+      await tokenContract.approve(
+        stakeContract.address,
+        ethers.constants.MaxUint256
+      );
+      // stake
+      await stakeContract.stake(ether("10000"));
+
+      // get tier
+      await htime.increase(oneMonth + 1);
+
+      await launchpadContract.buy(ether("1000"), { value: TP.mul(1000) });
+
+      await expect(launchpadContract.claim()).to.be.revertedWithCustomError(
+        launchpadContract,
+        "SaleIsNotFinishedYet"
+      );
+    });
+
     it("Claim first period", async function () {
       const { launchpadContract, stakeContract, tokenContract, owner } =
         await loadFixture(deployFixture);
@@ -478,11 +537,45 @@ describe("Launchpad", function () {
         deployFixture
       );
 
-      expect(await launchpadContract.TOKEN()).to.equal(stakeContract.address);
+      expect(await launchpadContract.STAKE()).to.equal(stakeContract.address);
 
-      await launchpadContract.setTokenAddress(owner.address);
+      await launchpadContract.setStakeAddress(owner.address);
 
-      expect(await launchpadContract.TOKEN()).to.equal(owner.address);
+      expect(await launchpadContract.STAKE()).to.equal(owner.address);
+    });
+
+    it("Withdraw ERC Token", async function () {
+      const { launchpadContract, tokenContract, owner } = await loadFixture(
+        deployFixture
+      );
+
+      const latestBalance = await tokenContract.balanceOf(owner.address);
+      await launchpadContract.withdrawToken(tokenContract.address, ether("1"));
+      expect(await tokenContract.balanceOf(owner.address)).to.equal(
+        latestBalance.add(ether("1"))
+      );
+    });
+
+    it("Withdraw Native Token", async function () {
+      const { launchpadContract, stakeContract, tokenContract, owner } =
+        await loadFixture(deployFixture);
+
+      // approve
+      await tokenContract.approve(
+        stakeContract.address,
+        ethers.constants.MaxUint256
+      );
+      // stake
+      await stakeContract.stake(ether("10000"));
+
+      // get tier
+      await htime.increase(oneMonth + 1);
+
+      await launchpadContract.buy(ether("1000"), { value: TP.mul(1000) });
+
+      const latestBalance = await owner.getBalance();
+      await launchpadContract.withdrawNativeToken(ether("1"));
+      expect((await owner.getBalance()).gt(latestBalance)).to.equal(true);
     });
   });
 });
