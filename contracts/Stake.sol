@@ -110,12 +110,14 @@ contract Stake is Ownable {
       
     if(userStake.amount >= 10_000 ether && userStake.amount < 25_000 ether) {
       return 1;
-    } else if(userStake.amount >= 25_000 ether && userStake.amount < 25_000 ether) {
+    } else if(userStake.amount >= 25_000 ether && userStake.amount < 75_000 ether) {
       return 2;
     } else if(userStake.amount >= 75_000 ether && userStake.amount < 150_000 ether) {
       return 3;
-    } else {
+    } else if(userStake.amount >= 150_000 ether) {
       return 4;
+    } else {
+      return 0;
     }
   }
 
