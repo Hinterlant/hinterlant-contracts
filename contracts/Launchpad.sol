@@ -14,7 +14,10 @@ interface IToken is IERC20 {
 
 contract Launchpad is Ownable {
   // Token Price
-  uint256 public immutable TP;
+  uint256 public TP;
+
+  // Total value wants to earn
+  uint256 public TOTAL_SALE_VALUE;
 
   // deposited money
   mapping(address => uint256) public balances;
@@ -23,7 +26,7 @@ contract Launchpad is Ownable {
   mapping(address => uint256) public claimed;
 
   // Our stake contract for getting tier information
-  IStake public immutable STAKE;
+  IStake public STAKE;
 
   // Token to distribute
   IToken public TOKEN;
@@ -56,6 +59,8 @@ contract Launchpad is Ownable {
   error SaleIsNotStartedYet();
   error SaleIsFinished();
   error NothingToClaim();
+  error AmountExceedsMaxAmount();
+  error SaleIsNotFinishedYet();
 
   // events
   event Bought(address buyer, uint256 amount);
@@ -63,6 +68,7 @@ contract Launchpad is Ownable {
 
   constructor(
     uint256 _tp, 
+    uint256 _totalSaleValue,
     address _stakeAddress, 
     address _tokenAddress, 
     uint256[] memory _allocs, 
@@ -73,6 +79,8 @@ contract Launchpad is Ownable {
   )
   {
     TP = _tp;
+    TOTAL_SALE_VALUE = _totalSaleValue;
+
     STAKE = IStake(_stakeAddress);
     TOKEN = IToken(_tokenAddress);
 
@@ -105,6 +113,9 @@ contract Launchpad is Ownable {
     if(msg.value < (amount * TP) / 1 ether)
       revert InsufficientPayment();
 
+    if(TOTAL_RECEIVED + msg.value > TOTAL_SALE_VALUE)
+      revert AmountExceedsMaxAmount();
+
     uint256 userTier = STAKE.getTier(msg.sender);
     if(userTier == 0)
       revert InsufficientTier();
@@ -122,6 +133,9 @@ contract Launchpad is Ownable {
   function claim() external {
     if(balances[msg.sender] == 0)
       revert NothingToClaim();
+
+    if(block.timestamp < SALE_END)
+      revert SaleIsNotFinishedYet();
 
     uint256 userCanClaim = userClaimable(msg.sender);
 
@@ -165,7 +179,11 @@ contract Launchpad is Ownable {
     TOKEN = IToken(_newAddress);
   }
 
-  function setAllocations(uint256[4] memory _newAllocs) external onlyOwner {
+  function setStakeAddress(address _newAddress) external onlyOwner {
+    STAKE = IStake(_newAddress);
+  }
+
+  function setAllocations(uint256[] memory _newAllocs) external onlyOwner {
     ALLOCATIONS = _newAllocs;
   }
   
@@ -183,5 +201,13 @@ contract Launchpad is Ownable {
 
   function setTimes(uint256[] memory _newTimes) external onlyOwner {
     TIMES = _newTimes;
+  }
+
+  function setTP(uint256 _newTP) external onlyOwner {
+    TP = _newTP;
+  }
+
+  function setTotalSaleValue(uint256 _newTSS) external onlyOwner {
+    TOTAL_SALE_VALUE = _newTSS;
   }
 }
