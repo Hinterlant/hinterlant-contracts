@@ -9,10 +9,6 @@ const ether = (number: string) => {
   return ethers.utils.parseEther(number);
 };
 
-const wei = (number: string) => {
-  return ethers.utils.formatEther(number);
-};
-
 const TP = ether("0.01");
 const ALLOCATIONS = [
   ether("1000"),
@@ -93,6 +89,16 @@ describe("Launchpad", function () {
       ).to.be.revertedWithCustomError(launchpadContract, "SaleIsNotStartedYet");
     });
 
+    it("Try to buy after sale", async function () {
+      const { launchpadContract } = await loadFixture(deployFixture);
+
+      await htime.increase(oneYear + 1);
+
+      await expect(
+        launchpadContract.buy(1, { value: 1 })
+      ).to.be.revertedWithCustomError(launchpadContract, "SaleIsFinished");
+    });
+
     it("Try to buy zero amount of tokens", async function () {
       const { launchpadContract } = await loadFixture(deployFixture);
 
@@ -103,14 +109,30 @@ describe("Launchpad", function () {
       ).to.be.revertedWithCustomError(launchpadContract, "InvalidAmount");
     });
 
-    it("Try to buy after sale", async function () {
-      const { launchpadContract } = await loadFixture(deployFixture);
+    it("Try to buy more than max sale value", async function () {
+      const { launchpadContract, stakeContract, tokenContract } =
+        await loadFixture(deployFixture);
 
-      await htime.increase(oneYear + 1);
+      // set TOTAL_SALE_VALUE to tier 4 allocation
+      await launchpadContract.setTotalSaleValue(ALLOCATIONS[3]);
+
+      // approve
+      await tokenContract.approve(
+        stakeContract.address,
+        ethers.constants.MaxUint256
+      );
+      // stake
+      await stakeContract.stake(ether("150000"));
+
+      // get tier
+      await htime.increase(twoMonths);
 
       await expect(
-        launchpadContract.buy(1, { value: 1 })
-      ).to.be.revertedWithCustomError(launchpadContract, "SaleIsFinished");
+        launchpadContract.buy(ether("4001"), { value: ether("4001") })
+      ).to.be.revertedWithCustomError(
+        launchpadContract,
+        "AmountExceedsMaxAmount"
+      );
     });
 
     it("Try to buy with insufficient fund", async function () {
@@ -149,8 +171,11 @@ describe("Launchpad", function () {
       await htime.increase(twoMonths);
 
       await expect(
-        launchpadContract.buy(ether("100100"), { value: ether("1001") })
-      ).to.be.revertedWithCustomError(launchpadContract, "CanNotBuyMore");
+        launchpadContract.buy(ether("1001"), { value: TP.mul(1001) })
+      ).to.be.revertedWithCustomError(
+        launchpadContract,
+        "AmountExceedsAllocation"
+      );
     });
 
     it("Try to buy more than allocation ~ tier 2", async function () {
@@ -169,8 +194,11 @@ describe("Launchpad", function () {
       await htime.increase(twoMonths);
 
       await expect(
-        launchpadContract.buy(ether("200100"), { value: ether("2001") })
-      ).to.be.revertedWithCustomError(launchpadContract, "CanNotBuyMore");
+        launchpadContract.buy(ether("2001"), { value: TP.mul(2001) })
+      ).to.be.revertedWithCustomError(
+        launchpadContract,
+        "AmountExceedsAllocation"
+      );
     });
 
     it("Try to buy more than allocation ~ tier 3", async function () {
@@ -189,8 +217,11 @@ describe("Launchpad", function () {
       await htime.increase(twoMonths);
 
       await expect(
-        launchpadContract.buy(ether("300100"), { value: ether("3001") })
-      ).to.be.revertedWithCustomError(launchpadContract, "CanNotBuyMore");
+        launchpadContract.buy(ether("3001"), { value: TP.mul(3001) })
+      ).to.be.revertedWithCustomError(
+        launchpadContract,
+        "AmountExceedsAllocation"
+      );
     });
 
     it("Try to buy more than allocation ~ tier 4", async function () {
@@ -209,8 +240,11 @@ describe("Launchpad", function () {
       await htime.increase(twoMonths);
 
       await expect(
-        launchpadContract.buy(ether("400100"), { value: ether("4001") })
-      ).to.be.revertedWithCustomError(launchpadContract, "CanNotBuyMore");
+        launchpadContract.buy(ether("4001"), { value: TP.mul(4001) })
+      ).to.be.revertedWithCustomError(
+        launchpadContract,
+        "AmountExceedsAllocation"
+      );
     });
 
     it("Legally buy with tier 1", async function () {
@@ -231,7 +265,7 @@ describe("Launchpad", function () {
       await launchpadContract.buy(ether("1000"), { value: TP.mul(1000) });
 
       expect(await launchpadContract.balances(owner.address)).to.equal(
-        TP.mul(1000)
+        ether("1000")
       );
     });
 
@@ -250,10 +284,10 @@ describe("Launchpad", function () {
       // get tier
       await htime.increase(twoMonths);
 
-      await launchpadContract.buy(ether("1000"), { value: TP.mul(1000) });
+      await launchpadContract.buy(ether("2000"), { value: TP.mul(2000) });
 
       expect(await launchpadContract.balances(owner.address)).to.equal(
-        TP.mul(1000)
+        ether("2000")
       );
     });
 
@@ -272,10 +306,10 @@ describe("Launchpad", function () {
       // get tier
       await htime.increase(twoMonths);
 
-      await launchpadContract.buy(ether("1000"), { value: TP.mul(1000) });
+      await launchpadContract.buy(ether("3000"), { value: TP.mul(3000) });
 
       expect(await launchpadContract.balances(owner.address)).to.equal(
-        TP.mul(1000)
+        ether("3000")
       );
     });
 
@@ -294,37 +328,10 @@ describe("Launchpad", function () {
       // get tier
       await htime.increase(twoMonths);
 
-      await launchpadContract.buy(ether("1000"), { value: TP.mul(1000) });
+      await launchpadContract.buy(ether("4000"), { value: TP.mul(4000) });
 
       expect(await launchpadContract.balances(owner.address)).to.equal(
-        TP.mul(1000)
-      );
-    });
-
-    it("Try to buy more than max sale value", async function () {
-      const { launchpadContract, stakeContract, tokenContract } =
-        await loadFixture(deployFixture);
-
-      // set TOTAL_SALE_VALUE to tier 4 allocation
-      await launchpadContract.setTotalSaleValue(ALLOCATIONS[3]);
-
-      // approve
-      await tokenContract.approve(
-        stakeContract.address,
-        ethers.constants.MaxUint256
-      );
-      // stake
-      await stakeContract.stake(ether("150000"));
-
-      // get tier
-      await htime.increase(twoMonths);
-
-      // we are sending intentionally 4001 ether to trigger our error
-      await expect(
-        launchpadContract.buy(ether("4001"), { value: ether("4001") })
-      ).to.be.revertedWithCustomError(
-        launchpadContract,
-        "AmountExceedsMaxAmount"
+        ether("4000")
       );
     });
   });
@@ -383,7 +390,7 @@ describe("Launchpad", function () {
       await htime.increase(3 * oneMonth + 1);
 
       expect(await launchpadContract.balances(owner.address)).to.equal(
-        TP.mul(1000)
+        ether("1000")
       );
 
       const latestBalance = await tokenContract.balanceOf(owner.address);
@@ -415,7 +422,7 @@ describe("Launchpad", function () {
       await htime.increase(4 * oneMonth + 1);
 
       expect(await launchpadContract.balances(owner.address)).to.equal(
-        TP.mul(1000)
+        ether("1000")
       );
 
       const latestBalance = await tokenContract.balanceOf(owner.address);
@@ -426,6 +433,37 @@ describe("Launchpad", function () {
       );
     });
 
+    it("Claim first three periods", async function () {
+      const { launchpadContract, stakeContract, tokenContract, owner } =
+        await loadFixture(deployFixture);
+
+      // approve
+      await tokenContract.approve(
+        stakeContract.address,
+        ethers.constants.MaxUint256
+      );
+      // stake
+      await stakeContract.stake(ether("10000"));
+
+      // get tier
+      await htime.increase(oneMonth + 1);
+
+      await launchpadContract.buy(ether("1000"), { value: TP.mul(1000) });
+
+      // get claim date
+      await htime.increase(5 * oneMonth + 1);
+
+      expect(await launchpadContract.balances(owner.address)).to.equal(
+        ether("1000")
+      );
+
+      const latestBalance = await tokenContract.balanceOf(owner.address);
+      await launchpadContract.claim();
+
+      expect(await tokenContract.balanceOf(owner.address)).to.equal(
+        latestBalance.add(ether("800"))
+      );
+    });
     it("Claim all periods", async function () {
       const { launchpadContract, stakeContract, tokenContract, owner } =
         await loadFixture(deployFixture);
@@ -447,7 +485,7 @@ describe("Launchpad", function () {
       await htime.increase(oneMonth * 6 + 1);
 
       expect(await launchpadContract.balances(owner.address)).to.equal(
-        TP.mul(1000)
+        ether("1000")
       );
 
       const latestBalance = await tokenContract.balanceOf(owner.address);
@@ -460,90 +498,6 @@ describe("Launchpad", function () {
   });
 
   describe("Authorized functions", function () {
-    it("Set Total Sale Value", async function () {
-      const { launchpadContract } = await loadFixture(deployFixture);
-
-      expect(await launchpadContract.TOTAL_SALE_VALUE()).to.equal(
-        TOTAL_SALE_VALUE
-      );
-
-      await launchpadContract.setTotalSaleValue(ether("10000"));
-
-      expect(await launchpadContract.TOTAL_SALE_VALUE()).to.equal(
-        ether("10000")
-      );
-    });
-
-    it("Set Token Price", async function () {
-      const { launchpadContract } = await loadFixture(deployFixture);
-
-      expect(await launchpadContract.TP()).to.equal(TP);
-
-      await launchpadContract.setTP(ether("10000"));
-
-      expect(await launchpadContract.TP()).to.equal(ether("10000"));
-    });
-
-    it("Set Percentages", async function () {
-      const { launchpadContract } = await loadFixture(deployFixture);
-
-      expect(await launchpadContract.PERCENTAGES(0)).to.equal(PERCENTAGES[0]);
-
-      await launchpadContract.setPercentages([ether("10000")]);
-
-      expect(await launchpadContract.PERCENTAGES(0)).to.equal(ether("10000"));
-    });
-
-    it("Set Sale Start", async function () {
-      const { launchpadContract } = await loadFixture(deployFixture);
-
-      await launchpadContract.setSaleStart(3);
-
-      expect(await launchpadContract.SALE_START()).to.equal(3);
-    });
-
-    it("Set Sale End", async function () {
-      const { launchpadContract } = await loadFixture(deployFixture);
-
-      await launchpadContract.setSaleEnd(5);
-
-      expect(await launchpadContract.SALE_END()).to.equal(5);
-    });
-
-    it("Set Allocations", async function () {
-      const { launchpadContract } = await loadFixture(deployFixture);
-
-      expect(await launchpadContract.ALLOCATIONS(0)).to.equal(ALLOCATIONS[0]);
-
-      await launchpadContract.setAllocations([ether("1")]);
-
-      expect(await launchpadContract.ALLOCATIONS(0)).to.equal(ether("1"));
-    });
-
-    it("Set Token Address", async function () {
-      const { launchpadContract, tokenContract, owner } = await loadFixture(
-        deployFixture
-      );
-
-      expect(await launchpadContract.TOKEN()).to.equal(tokenContract.address);
-
-      await launchpadContract.setTokenAddress(owner.address);
-
-      expect(await launchpadContract.TOKEN()).to.equal(owner.address);
-    });
-
-    it("Set Stake Address", async function () {
-      const { launchpadContract, stakeContract, owner } = await loadFixture(
-        deployFixture
-      );
-
-      expect(await launchpadContract.STAKE()).to.equal(stakeContract.address);
-
-      await launchpadContract.setStakeAddress(owner.address);
-
-      expect(await launchpadContract.STAKE()).to.equal(owner.address);
-    });
-
     it("Withdraw ERC Token", async function () {
       const { launchpadContract, tokenContract, owner } = await loadFixture(
         deployFixture
@@ -576,6 +530,90 @@ describe("Launchpad", function () {
       const latestBalance = await owner.getBalance();
       await launchpadContract.withdrawNativeToken(ether("1"));
       expect((await owner.getBalance()).gt(latestBalance)).to.equal(true);
+    });
+
+    it("Set Token Address", async function () {
+      const { launchpadContract, tokenContract, owner } = await loadFixture(
+        deployFixture
+      );
+
+      expect(await launchpadContract.TOKEN()).to.equal(tokenContract.address);
+
+      await launchpadContract.setTokenAddress(owner.address);
+
+      expect(await launchpadContract.TOKEN()).to.equal(owner.address);
+    });
+
+    it("Set Stake Address", async function () {
+      const { launchpadContract, stakeContract, owner } = await loadFixture(
+        deployFixture
+      );
+
+      expect(await launchpadContract.STAKE()).to.equal(stakeContract.address);
+
+      await launchpadContract.setStakeAddress(owner.address);
+
+      expect(await launchpadContract.STAKE()).to.equal(owner.address);
+    });
+
+    it("Set Allocations", async function () {
+      const { launchpadContract } = await loadFixture(deployFixture);
+
+      expect(await launchpadContract.ALLOCATIONS(0)).to.equal(ALLOCATIONS[0]);
+
+      await launchpadContract.setAllocations([ether("1")]);
+
+      expect(await launchpadContract.ALLOCATIONS(0)).to.equal(ether("1"));
+    });
+
+    it("Set Sale Start", async function () {
+      const { launchpadContract } = await loadFixture(deployFixture);
+
+      await launchpadContract.setSaleStart(3);
+
+      expect(await launchpadContract.SALE_START()).to.equal(3);
+    });
+
+    it("Set Sale End", async function () {
+      const { launchpadContract } = await loadFixture(deployFixture);
+
+      await launchpadContract.setSaleEnd(5);
+
+      expect(await launchpadContract.SALE_END()).to.equal(5);
+    });
+
+    it("Set Percentages", async function () {
+      const { launchpadContract } = await loadFixture(deployFixture);
+
+      expect(await launchpadContract.PERCENTAGES(0)).to.equal(PERCENTAGES[0]);
+
+      await launchpadContract.setPercentages([ether("10000")]);
+
+      expect(await launchpadContract.PERCENTAGES(0)).to.equal(ether("10000"));
+    });
+
+    it("Set Token Price", async function () {
+      const { launchpadContract } = await loadFixture(deployFixture);
+
+      expect(await launchpadContract.TP()).to.equal(TP);
+
+      await launchpadContract.setTP(ether("10000"));
+
+      expect(await launchpadContract.TP()).to.equal(ether("10000"));
+    });
+
+    it("Set Total Sale Value", async function () {
+      const { launchpadContract } = await loadFixture(deployFixture);
+
+      expect(await launchpadContract.TOTAL_SALE_VALUE()).to.equal(
+        TOTAL_SALE_VALUE
+      );
+
+      await launchpadContract.setTotalSaleValue(ether("10000"));
+
+      expect(await launchpadContract.TOTAL_SALE_VALUE()).to.equal(
+        ether("10000")
+      );
     });
   });
 });

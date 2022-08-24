@@ -14,6 +14,7 @@ contract Stake is Ownable {
   error CanNotStakeOrUnstakeZeroToken();
   error CanNotUnstake();
   error CanNotHarvestBefore7Days();
+  error NothingToHarvest();
 
   // Project's token
   IERC20 public immutable TOKEN;
@@ -85,7 +86,7 @@ contract Stake is Ownable {
   function harvest() external {
     uint256 rewards = calculateRewards(msg.sender);
 
-    if(rewards == 0) revert CanNotStakeOrUnstakeZeroToken();
+    if(rewards == 0) revert NothingToHarvest();
 
     Operation memory ref = _stakes[msg.sender];
 
@@ -107,7 +108,7 @@ contract Stake is Ownable {
     
     if(block.timestamp - userStake.start < 30 days || userStake.amount == 0)
       return 0;
-      
+
     if(userStake.amount >= 10_000 ether && userStake.amount < 25_000 ether) {
       return 1;
     } else if(userStake.amount >= 25_000 ether && userStake.amount < 75_000 ether) {
