@@ -4,17 +4,24 @@ pragma solidity 0.8.16;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract Stake is Ownable {
+contract LockedStake is Ownable {
     // Events
-    event NewStake(address from, uint256 newAmount, uint256 totalAmount);
-    event Unstake(address from, uint256 unstakedAmount, uint256 totalAmount);
+    event NewStake(address from, uint256 stakeAmount, uint256 totalAmount);
+    event Unstake(address from, uint256 remainingAmount);
     event Harvest(address from, uint256 amount);
 
     // Errors
     error CanNotStakeOrUnstakeZeroToken();
     error CanNotUnstake();
-    error CanNotHarvestBefore7Days();
     error NothingToHarvest();
+    error CannotLockMoreThanOnce(); // for reward calculation purposes
+
+    // Enum for lock
+    enum LockTime {
+        SEVEN_DAYS,
+        THIRTY_DAYS,
+        ONE_YEAR
+    }
 
     // Project's token
     IERC20 public immutable TOKEN;
@@ -27,8 +34,8 @@ contract Stake is Ownable {
 
     struct Operation {
         uint32 start;
-        uint32 allTimes; // if user stake more than one without unstakes, we'll keep his stake time in here
-        uint192 amount; // it can contain 6277101735386680763835789423207666416102 amount of tokens
+        uint216 amount;
+        LockTime lockTime;
     }
 
     mapping(address => Operation) private _stakes;
@@ -37,7 +44,7 @@ contract Stake is Ownable {
         TOKEN = IERC20(tokenAddress);
     }
 
-    function stake(uint256 amount) external {
+    function stake(uint256 amount, LockTime lockTime) external {
         if (amount == 0) revert CanNotStakeOrUnstakeZeroToken();
 
         // take tokens
@@ -46,67 +53,45 @@ contract Stake is Ownable {
         Operation storage ref = _stakes[msg.sender];
         // if user already staked
         if (ref.start != 0) {
-            // user's new stake amount is equal to: old stake amount + rewards + new amount
-            // compound staking
-            ref.amount += uint192(
-                calculateRewards(msg.sender) + _stakes[msg.sender].amount
-            );
-        } else {
-            ref.amount = uint192(amount);
+            revert CannotLockMoreThanOnce();
         }
 
-        _stakes[msg.sender].start = uint32(block.timestamp);
+        ref.start = uint32(block.timestamp);
+        ref.amount = uint216(amount);
+        ref.lockTime = lockTime;
 
         total += amount;
         emit NewStake(msg.sender, amount, ref.amount);
     }
 
-    function unstake(uint256 amount) external {
-        if (amount == 0) revert CanNotStakeOrUnstakeZeroToken();
-
+    function claim() external {
         Operation storage ref = _stakes[msg.sender];
         if (ref.start == 0) revert CanNotUnstake();
 
-        TOKEN.transfer(msg.sender, calculateRewards(msg.sender) + amount);
-
-        ref.amount -= uint192(amount);
-        if (ref.amount == 0) {
-            ref.start = 0;
-            ref.allTimes = 0;
-        } else {
-            ref.allTimes += uint32(block.timestamp) - ref.start;
-            ref.start = uint32(block.timestamp);
+        uint256 lockTime;
+        if (ref.lockTime == LockTime.SEVEN_DAYS) {
+            lockTime = 7 days;
+        } else if (ref.lockTime == LockTime.THIRTY_DAYS) {
+            lockTime = 30 days;
+        } else if (ref.lockTime == LockTime.ONE_YEAR) {
+            lockTime = 365 days;
         }
 
-        total -= amount;
-        emit Unstake(msg.sender, amount, ref.amount);
-    }
+        if (block.timestamp < ref.start + lockTime) {
+            revert CanNotUnstake();
+        }
 
-    function harvest() external {
-        uint256 rewards = calculateRewards(msg.sender);
+        TOKEN.transfer(msg.sender, calculateRewards(msg.sender) + ref.amount);
 
-        if (rewards == 0) revert NothingToHarvest();
+        ref.start = 0;
 
-        Operation memory ref = _stakes[msg.sender];
-
-        if (block.timestamp - ref.start < 7 days)
-            revert CanNotHarvestBefore7Days();
-
-        ref.allTimes = uint32(block.timestamp) - ref.start;
-        ref.start = uint32(block.timestamp);
-
-        TOKEN.transfer(msg.sender, rewards);
-
-        emit Harvest(msg.sender, rewards);
+        total -= ref.amount;
+        emit Unstake(msg.sender, ref.amount);
     }
 
     // View Functions
     function getTier(address owner) external view returns (uint256) {
         Operation memory userStake = _stakes[owner];
-
-        if (
-            block.timestamp - userStake.start < 30 days || userStake.amount == 0
-        ) return 0;
 
         if (
             userStake.amount >= 10_000 ether && userStake.amount < 25_000 ether
